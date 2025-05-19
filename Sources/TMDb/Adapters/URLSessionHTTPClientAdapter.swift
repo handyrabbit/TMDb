@@ -57,7 +57,7 @@ extension URLSessionHTTPClientAdapter {
         for header in httpRequest.headers {
             urlRequest.addValue(header.value, forHTTPHeaderField: header.key)
         }
-
+        urlRequest.timeoutInterval = 3
         return urlRequest
     }
 
@@ -95,9 +95,24 @@ extension URLSessionHTTPClientAdapter {
             }
         }
     #else
-        private func perform(_ urlRequest: URLRequest) async throws -> (Data, URLResponse) {
-            try await urlSession.data(for: urlRequest)
+    private func perform(_ urlRequest: URLRequest) async throws -> (Data, URLResponse) {
+        try await withThrowingTaskGroup(of: (Data, URLResponse).self) { group in
+            // 添加请求任务
+            group.addTask {
+                try await self.urlSession.data(for: urlRequest)
+            }
+
+            // 添加超时任务
+            group.addTask {
+                try await Task.sleep(nanoseconds: 3 * 1_000_000_000)
+                throw URLError(.timedOut)
+            }
+
+            let result = try await group.next()!
+            group.cancelAll()
+            return result
         }
+    }
     #endif
 
 }
